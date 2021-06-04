@@ -13,20 +13,28 @@ const VestingRegistryLogic = artifacts.require("VestingRegistryLogic");
 const VestingRegistryProxy = artifacts.require("VestingRegistryProxy");
 const UpgradableProxy = artifacts.require("UpgradableProxy");
 const LockedSOV = artifacts.require("LockedSOV");
+const VestingRegistry = artifacts.require("VestingRegistry");
+const VestingRegistry2 = artifacts.require("VestingRegistry2");
+const VestingRegistry3 = artifacts.require("VestingRegistry3");
+const TestToken = artifacts.require("TestToken");
 
 const FOUR_WEEKS = new BN(4 * 7 * 24 * 60 * 60);
-
 const TEAM_VESTING_CLIFF = FOUR_WEEKS.mul(new BN(6));
 const TEAM_VESTING_DURATION = FOUR_WEEKS.mul(new BN(36));
-
 const TOTAL_SUPPLY = "100000000000000000000000000";
 const ZERO_ADDRESS = constants.ZERO_ADDRESS;
+const pricsSats = "2500";
 
 contract("VestingRegistryLogic", (accounts) => {
 	let root, account1, account2, account3, account4;
 	let SOV, lockedSOV;
 	let staking, stakingLogic, feeSharingProxy;
 	let vesting, vestingFactory, vestingLogic, vestingRegistryLogic;
+	let vestingRegistry, vestingRegistry2, vestingRegistry3;
+	let vestingAddress, vestingAddress2, vestingAddress3;
+	let vestingTeamAddress, vestingTeamAddress2, vestingTeamAddress3;
+	let newVestingAddress, newVestingAddress2, newVestingAddress3;
+	let newTeamVestingAddress, newTeamVestingAddress2, newTeamVestingAddress3;
 
 	let cliff = 1; // This is in 4 weeks. i.e. 1 * 4 weeks.
 	let duration = 11; // This is in 4 weeks. i.e. 11 * 4 weeks.
@@ -37,6 +45,8 @@ contract("VestingRegistryLogic", (accounts) => {
 
 	beforeEach(async () => {
 		SOV = await SOV_ABI.new(TOTAL_SUPPLY);
+		cSOV1 = await TestToken.new("cSOV1", "cSOV1", 18, TOTAL_SUPPLY);
+		cSOV2 = await TestToken.new("cSOV2", "cSOV2", 18, TOTAL_SUPPLY);
 
 		stakingLogic = await StakingLogic.new();
 		staking = await StakingProxy.new(SOV.address);
@@ -52,7 +62,7 @@ contract("VestingRegistryLogic", (accounts) => {
 		vesting = await VestingRegistryProxy.new();
 		await vesting.setImplementation(vestingRegistryLogic.address);
 		vesting = await VestingRegistryLogic.at(vesting.address);
-		vestingFactory.transferOwnership(vesting.address);
+		//vestingFactory.transferOwnership(vesting.address);
 
 		lockedSOV = await LockedSOV.new(SOV.address, vesting.address, cliff, duration, [root]);
 		await vesting.addAdmin(lockedSOV.address);
@@ -245,6 +255,137 @@ contract("VestingRegistryLogic", (accounts) => {
 
 		it("fails if the 0 is passed as an amount", async () => {
 			await expectRevert(vesting.transferSOV(account1, 0), "amount invalid");
+		});
+	});
+
+	describe.only("addDeployedVestings", () => {
+		it("adds deployed vestings from VestingRegistry ", async () => {
+			vestingRegistry = await VestingRegistry.new(
+				vestingFactory.address,
+				SOV.address,
+				[cSOV1.address, cSOV2.address],
+				pricsSats,
+				staking.address,
+				feeSharingProxy.address,
+				account1
+			);
+
+			let amt = new BN(2000000);
+			let amount = new BN(200000);
+			await SOV.transfer(vestingRegistry.address, amt);
+
+			let cliff = FOUR_WEEKS;
+			let duration = FOUR_WEEKS.mul(new BN(20));
+			let teamCliff = TEAM_VESTING_CLIFF;
+			let teamDuration = TEAM_VESTING_DURATION;
+
+			await vestingFactory.transferOwnership(vestingRegistry.address);
+			await vestingRegistry.createVesting(account1, amount, cliff, duration);
+			vestingAddress = await vestingRegistry.getVesting(account1);
+			await vestingRegistry.createTeamVesting(account1, amount, teamCliff, teamDuration);
+			vestingTeamAddress = await vestingRegistry.getTeamVesting(account1);
+			assert.notEqual(vestingAddress, ZERO_ADDRESS, "Vesting Address should not be zero.");
+			assert.notEqual(vestingTeamAddress, ZERO_ADDRESS, "Vesting Team Address should not be zero.");
+		});
+
+		it("adds deployed vestings from VestingRegistry2 ", async () => {
+			vestingRegistry2 = await VestingRegistry2.new(
+				vestingFactory.address,
+				SOV.address,
+				[cSOV1.address, cSOV2.address],
+				pricsSats,
+				staking.address,
+				feeSharingProxy.address,
+				account1
+			);
+
+			let amt = new BN(2000000);
+			let amount = new BN(200000);
+			await SOV.transfer(vestingRegistry2.address, amt);
+
+			let cliff = FOUR_WEEKS;
+			let duration = FOUR_WEEKS.mul(new BN(20));
+			let teamCliff = TEAM_VESTING_CLIFF;
+			let teamDuration = TEAM_VESTING_DURATION;
+
+			await vestingFactory.transferOwnership(vestingRegistry2.address);
+			await vestingRegistry2.createVesting(account2, amount, cliff, duration);
+			vestingAddress2 = await vestingRegistry2.getVesting(account2);
+			await vestingRegistry2.createTeamVesting(account2, amount, teamCliff, teamDuration);
+			vestingTeamAddress2 = await vestingRegistry2.getTeamVesting(account2);
+			assert.notEqual(vestingAddress2, ZERO_ADDRESS, "Vesting Address should not be zero.");
+			assert.notEqual(vestingTeamAddress2, ZERO_ADDRESS, "Vesting Team Address should not be zero.");
+		});
+
+		it("adds deployed vestings from VestingRegistry3 ", async () => {
+			vestingRegistry3 = await VestingRegistry3.new(
+				vestingFactory.address,
+				SOV.address,
+				staking.address,
+				feeSharingProxy.address,
+				account1
+			);
+
+			let amt = new BN(2000000);
+			let amount = new BN(200000);
+			await SOV.transfer(vestingRegistry3.address, amt);
+
+			let cliff = FOUR_WEEKS;
+			let duration = FOUR_WEEKS.mul(new BN(20));
+			let teamCliff = TEAM_VESTING_CLIFF;
+			let teamDuration = TEAM_VESTING_DURATION;
+
+			await vestingFactory.transferOwnership(vestingRegistry3.address);
+			await vestingRegistry3.createVesting(account3, amount, cliff, duration);
+			vestingAddress3 = await vestingRegistry3.getVesting(account3);
+			await vestingRegistry3.createTeamVesting(account3, amount, teamCliff, teamDuration);
+			vestingTeamAddress3 = await vestingRegistry3.getTeamVesting(account3);
+			assert.notEqual(vestingAddress3, ZERO_ADDRESS, "Vesting Address should not be zero.");
+			assert.notEqual(vestingTeamAddress3, ZERO_ADDRESS, "Vesting Team Address should not be zero.");
+		});
+
+		it("adds deployed vestings to new Vesting Registry ", async () => {
+			await vesting.initialize(
+				vestingFactory.address,
+				SOV.address,
+				staking.address,
+				feeSharingProxy.address,
+				account1,
+				lockedSOV.address,
+				vestingRegistry.address,
+				vestingRegistry2.address,
+				vestingRegistry3.address
+			);
+
+			let cliff = FOUR_WEEKS;
+			let duration = FOUR_WEEKS.mul(new BN(20));
+			let teamCliff = TEAM_VESTING_CLIFF;
+			let teamDuration = TEAM_VESTING_DURATION;
+
+			vestingFactory.transferOwnership(vesting.address);
+			await vesting.addDeployedVestings([account1, account2, account3]);
+
+			newVestingAddress = await vesting.getVestingAddr(account1, cliff, duration);
+			newVestingAddress2 = await vesting.getVestingAddr(account2, cliff, duration);
+			newVestingAddress3 = await vesting.getVestingAddr(account3, cliff, duration);
+			newTeamVestingAddress = await vesting.getTeamVesting(account1, teamCliff, teamDuration);
+			newTeamVestingAddress2 = await vesting.getTeamVesting(account2, teamCliff, teamDuration);
+			newTeamVestingAddress3 = await vesting.getTeamVesting(account3, teamCliff, teamDuration);
+
+			expect(vestingAddress).equal(newVestingAddress);
+			expect(vestingAddress2).equal(newVestingAddress2);
+			expect(vestingAddress3).equal(newVestingAddress3);
+			expect(vestingTeamAddress).equal(newTeamVestingAddress);
+			expect(vestingTeamAddress2).equal(newTeamVestingAddress2);
+			expect(vestingTeamAddress3).equal(newTeamVestingAddress3);
+		});
+
+		it("fails if the 0 address is passed", async () => {
+			await expectRevert(vesting.addDeployedVestings([ZERO_ADDRESS]), "token owner cannot be 0 address");
+		});
+
+		it("fails if sender isn't an owner", async () => {
+			await expectRevert(vesting.addDeployedVestings([account1], { from: account2 }), "unauthorized");
 		});
 	});
 

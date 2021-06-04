@@ -545,7 +545,6 @@ contract("VestingCreator", (accounts) => {
 			);
 
 			let period = await vestingCreator.getVestingPeriod();
-			console.log(period);
 			if (period <= MAX_PERIOD) {
 				let tx = await vestingCreator.processNextVesting();
 				console.log("gasUsed = " + tx.receipt.gasUsed);

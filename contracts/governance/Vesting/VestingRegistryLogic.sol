@@ -26,13 +26,19 @@ contract VestingRegistryLogic is VestingRegistryStorage, Initializable, AdminRol
 		address _staking,
 		address _feeSharingProxy,
 		address _vestingOwner,
-		address _lockedSOV
+		address _lockedSOV,
+		address _vestingRegistry,
+		address _vestingRegistry2,
+		address _vestingRegistry3
 	) public onlyOwner initializer {
 		require(_SOV != address(0), "SOV address invalid");
 		require(_staking != address(0), "staking address invalid");
 		require(_feeSharingProxy != address(0), "feeSharingProxy address invalid");
 		require(_vestingOwner != address(0), "vestingOwner address invalid");
 		require(_lockedSOV != address(0), "LockedSOV address invalid");
+		require(_vestingRegistry != address(0), "Vesting registry address invalid");
+		require(_vestingRegistry2 != address(0), "Vesting registry address invalid");
+		require(_vestingRegistry3 != address(0), "Vesting registry address invalid");
 
 		_setVestingFactory(_vestingFactory);
 		SOV = _SOV;
@@ -40,6 +46,9 @@ contract VestingRegistryLogic is VestingRegistryStorage, Initializable, AdminRol
 		feeSharingProxy = _feeSharingProxy;
 		vestingOwner = _vestingOwner;
 		lockedSOV = LockedSOV(_lockedSOV);
+		vestingRegistry = VestingRegistry(_vestingRegistry);
+		vestingRegistry2 = VestingRegistry2(_vestingRegistry2);
+		vestingRegistry3 = VestingRegistry3(_vestingRegistry3);
 	}
 
 	/**
@@ -70,6 +79,18 @@ contract VestingRegistryLogic is VestingRegistryStorage, Initializable, AdminRol
 
 		IERC20(SOV).transfer(_receiver, _amount);
 		emit SOVTransferred(_receiver, _amount);
+	}
+
+	/**
+	 * @notice adds vestings that were deployed in previous vesting registries
+	 * @dev migration of data from previous vesting registy contracts
+	 */
+	function addDeployedVestings(address[] memory _tokenOwners) public onlyAuthorized {
+		for (uint256 i = 0; i < _tokenOwners.length; i++) {
+			require(_tokenOwners[i] != address(0), "token owner cannot be 0 address");
+			_getDeployedVestings(_tokenOwners[i]);
+			_getDeployedTeamVestings(_tokenOwners[i]);
+		}
 	}
 
 	/**
@@ -185,6 +206,58 @@ contract VestingRegistryLogic is VestingRegistryStorage, Initializable, AdminRol
 			vestingsOf[_tokenOwner].push(uid);
 		}
 		return vestingContracts[_tokenOwner][uid];
+	}
+
+	/**
+	 * @notice returns the addresses of Vesting contracts from all three previous versions of Vesting Registry
+	 */
+	function _getDeployedVestings(address _tokenOwner) internal {
+		if (vestingRegistry.getVesting(_tokenOwner) != address(0)) {
+			vestingAddresses.push(vestingRegistry.getVesting(_tokenOwner));
+		}
+		if (vestingRegistry2.getVesting(_tokenOwner) != address(0)) {
+			vestingAddresses.push(vestingRegistry2.getVesting(_tokenOwner));
+		}
+		if (vestingRegistry3.getVesting(_tokenOwner) != address(0)) {
+			vestingAddresses.push(vestingRegistry3.getVesting(_tokenOwner));
+		}
+		uint256 vestingType = 1;
+		for (uint256 i = 0; i < vestingAddresses.length; i++) {
+			VestingLogic vesting = VestingLogic(vestingAddresses[i]);
+			uint256 uid = uint256(keccak256(abi.encodePacked(
+				_tokenOwner, 
+				vestingType, 
+				vesting.cliff(), 
+				vesting.duration())));
+			vestingContracts[_tokenOwner][uid] = vestingAddresses[i];
+		}
+		delete vestingAddresses;
+	}
+
+	/**
+	 * @notice returns the addresses of TeamVesting contracts from all three previous versions of Vesting Registry
+	 */
+	function _getDeployedTeamVestings(address _tokenOwner) internal {
+		if (vestingRegistry.getTeamVesting(_tokenOwner) != address(0)) {
+			vestingAddresses.push(vestingRegistry.getTeamVesting(_tokenOwner));
+		}
+		if (vestingRegistry2.getTeamVesting(_tokenOwner) != address(0)) {
+			vestingAddresses.push(vestingRegistry2.getTeamVesting(_tokenOwner));
+		}
+		if (vestingRegistry3.getTeamVesting(_tokenOwner) != address(0)) {
+			vestingAddresses.push(vestingRegistry3.getTeamVesting(_tokenOwner));
+		}
+		uint256 vestingType = 0;
+		for (uint256 i = 0; i < vestingAddresses.length; i++) {
+			VestingLogic vesting = VestingLogic(vestingAddresses[i]);
+			uint256 uid = uint256(keccak256(abi.encodePacked(
+				_tokenOwner, 
+				vestingType, 
+				vesting.cliff(), 
+				vesting.duration())));
+			vestingContracts[_tokenOwner][uid] = vestingAddresses[i];
+		}
+		delete vestingAddresses;
 	}
 
 	/**

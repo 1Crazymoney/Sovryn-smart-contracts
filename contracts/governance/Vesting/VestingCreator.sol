@@ -3,14 +3,11 @@ pragma solidity ^0.5.17;
 import "../../interfaces/IERC20.sol";
 import "../../mixins/AdminRole.sol";
 import "./VestingRegistryLogic.sol";
-import "./VestingRegistry.sol";
-import "./VestingRegistry2.sol";
-import "./VestingRegistry3.sol";
 import "./VestingLogic.sol";
 import "../../openzeppelin/SafeMath.sol";
 
 contract VestingCreator is AdminRole {
-	using SafeMath for uint256;
+	using SafeMath for uint;
 
 	///@notice Boolean to check both vesting creation and staking is completed for a record
 	bool vestingCreated;
@@ -21,17 +18,8 @@ contract VestingCreator is AdminRole {
 	///@notice the SOV token contract
 	IERC20 public SOV;
 
-	///@notice the vesting registry upgradable contract
-	VestingRegistryLogic public vestingRegistryLogic;
-
 	///@notice the vesting registry contract
-	VestingRegistry public vestingRegistry;
-
-	///@notice the vesting registry2 contract
-	VestingRegistry2 public vestingRegistry2;
-
-	///@notice the vesting registry3 contract
-	VestingRegistry3 public vestingRegistry3;
+	VestingRegistryLogic public vestingRegistryLogic;
 
 	///@notice Holds Vesting Data
 	struct VestingData {
@@ -46,44 +34,17 @@ contract VestingCreator is AdminRole {
 	///@notice list of vesting to be processed
 	VestingData[] public vestingDataList;
 
-	///@notice Holds Vesting Data that has been migrated from vesting registries
-	struct VestingMigratedData {
-		address tokenOwner;
-		uint256 cliff;
-		uint256 duration;
-		bool governanceControl; ///@dev true - tokens can be withdrawn by governance
-		address vestingAddress;
-	}
-
-	///@notice list of vestings migrated from previous registries
-	VestingMigratedData[] public vestingMigratedDataList;
-
-	///@notice list of vestings addresses for a token owner created through previous regsitries
-	address[] public vestingAddresses;
-
 	event SOVTransferred(address indexed receiver, uint256 amount);
 	event TokensStaked(address indexed vesting, address indexed tokenOwner, uint256 amount);
 	event VestingDataRemoved(address indexed caller, address tokenOwner);
 	event DataCleared(address indexed caller);
 
-	constructor(
-		address _SOV,
-		address _vestingRegistryLogic,
-		address _vestingRegistry,
-		address _vestingRegistry2,
-		address _vestingRegistry3
-	) public {
+	constructor(address _SOV, address _vestingRegistryLogic) public {
 		require(_SOV != address(0), "SOV address invalid");
 		require(_vestingRegistryLogic != address(0), "Vesting registry address invalid");
-		require(_vestingRegistry != address(0), "Vesting registry address invalid");
-		require(_vestingRegistry2 != address(0), "Vesting registry address invalid");
-		require(_vestingRegistry3 != address(0), "Vesting registry address invalid");
 
 		SOV = IERC20(_SOV);
 		vestingRegistryLogic = VestingRegistryLogic(_vestingRegistryLogic);
-		vestingRegistry = VestingRegistry(_vestingRegistry);
-		vestingRegistry2 = VestingRegistry2(_vestingRegistry2);
-		vestingRegistry3 = VestingRegistry3(_vestingRegistry3);
 	}
 
 	/**
@@ -110,45 +71,35 @@ contract VestingCreator is AdminRole {
 		uint256[] memory _durations,
 		bool[] memory _governanceControls
 	) public onlyAuthorized {
-		require(
-			_tokenOwners.length == _amounts.length &&
-				_tokenOwners.length == _cliffs.length &&
-				_tokenOwners.length == _durations.length &&
-				_tokenOwners.length == _governanceControls.length,
-			"arrays mismatch"
-		);
+		require(_tokenOwners.length == _amounts.length
+			&& _tokenOwners.length == _cliffs.length
+			&& _tokenOwners.length == _durations.length
+			&& _tokenOwners.length == _governanceControls.length,
+			"arrays mismatch");
 
-		for (uint256 i = 0; i < _tokenOwners.length; i++) {
+		for (uint i = 0; i < _tokenOwners.length; i++) {
 			require(_durations[i] >= _cliffs[i], "duration must be bigger than or equal to the cliff");
 			require(_amounts[i] > 0, "vesting amount cannot be 0");
-			require(_tokenOwners[i] != address(0), "token owner cannot be 0 address");
+			require(_tokenOwners[i] != address(0),"token owner cannot be 0 address");
 			require(_cliffs[i].mod(TWO_WEEKS) == 0, "cliffs should have intervals of two weeks");
 			require(_durations[i].mod(TWO_WEEKS) == 0, "durations should have intervals of two weeks");
-			address _vestingAddress = _getVesting(_tokenOwners[i], _cliffs[i], _durations[i], _governanceControls[i]);
+			address _vestingAddress = _getVesting(
+				_tokenOwners[i], 
+				_cliffs[i], 
+				_durations[i],
+				_governanceControls[i]);
 			if (_vestingAddress == address(0)) {
 				VestingData memory vestingData =
-					VestingData({
-						tokenOwner: _tokenOwners[i],
-						amount: _amounts[i],
-						cliff: _cliffs[i],
-						duration: _durations[i],
-						governanceControl: _governanceControls[i],
-						vestingAddress: _vestingAddress
-					});
-				vestingDataList.push(vestingData);
-			}
-		}
-	}
-
-	/**
-	 * @notice adds vestings that were deployed in previous vesting registries
-	 * @dev migration of data from previous vesting registy contracts
-	 */
-	function addDeployedVestings(address[] memory _tokenOwners) public onlyAuthorized {
-		for (uint256 i = 0; i < _tokenOwners.length; i++) {
-			require(_tokenOwners[i] != address(0), "token owner cannot be 0 address");
-			_getDeployedVestings(_tokenOwners[i]);
-			_getDeployedTeamVestings(_tokenOwners[i]);
+				VestingData({
+					tokenOwner: _tokenOwners[i],
+					amount: _amounts[i],
+					cliff: _cliffs[i],
+					duration: _durations[i],
+					governanceControl: _governanceControls[i],
+					vestingAddress: _vestingAddress
+				});
+			vestingDataList.push(vestingData);
+			}	
 		}
 	}
 
@@ -187,7 +138,11 @@ contract VestingCreator is AdminRole {
 				VestingLogic vesting = VestingLogic(vestingData.vestingAddress);
 				SOV.approve(address(vesting), vestingData.amount);
 				vesting.stakeTokens(vestingData.amount);
-				emit TokensStaked(vestingData.vestingAddress, vestingData.tokenOwner, vestingData.amount);
+				emit TokensStaked(
+					vestingData.vestingAddress, 
+					vestingData.tokenOwner, 
+					vestingData.amount
+				);
 				vestingCreated = false;
 				address tokenOwnerDetails = vestingData.tokenOwner;
 				delete vestingDataList[vestingDataList.length - 1];
@@ -230,7 +185,7 @@ contract VestingCreator is AdminRole {
 
 	/**
 	 * @notice returns period i.e. (duration - cliff / 4 WEEKS)
-	 * @dev will be used for deciding if vesting and staking needs to be processed
+	 * @dev will be used for deciding if vesting and staking needs to be processed 
 	 * in a single transaction or separate transactions
 	 */
 	function getVestingPeriod() public view returns (uint256) {
@@ -244,16 +199,16 @@ contract VestingCreator is AdminRole {
 	/**
 	 * @notice returns count of vestings to be processed
 	 */
-	function getUnprocessedCount() public view returns (uint256) {
+	function getUnprocessedCount() public view returns (uint) {
 		return vestingDataList.length;
 	}
 
 	/**
 	 * @notice returns total amount of vestings to be processed
 	 */
-	function getUnprocessedAmount() public view returns (uint256) {
-		uint256 amount = 0;
-		for (uint256 i = 0; i < vestingDataList.length; i++) {
+	function getUnprocessedAmount() public view returns (uint) {
+		uint amount = 0;
+		for (uint i = 0; i < vestingDataList.length; i++) {
 			amount = amount.add(vestingDataList[i].amount);
 		}
 		return amount;
@@ -269,7 +224,7 @@ contract VestingCreator is AdminRole {
 	/**
 	 * @notice returns missed balance to process all vestings
 	 */
-	function getMissingBalance() public view returns (uint256) {
+	function getMissingBalance() public view returns (uint) {
 		if (isEnoughBalance()) {
 			return 0;
 		}
@@ -286,68 +241,21 @@ contract VestingCreator is AdminRole {
 		} else {
 			vestingRegistryLogic.createVesting(vestingData.tokenOwner, vestingData.amount, vestingData.cliff, vestingData.duration);
 		}
-		return _getVesting(vestingData.tokenOwner, vestingData.cliff, vestingData.duration, vestingData.governanceControl);
+		return _getVesting(
+			vestingData.tokenOwner, 
+			vestingData.cliff, 
+			vestingData.duration,
+			vestingData.governanceControl);
 	}
 
 	/**
 	 * @notice returns an address of TeamVesting or Vesting contract (depends on a governance control)
 	 */
-	function _getVesting(
-		address _tokenOwner,
-		uint256 _cliff,
-		uint256 _duration,
-		bool _governanceControl
-	) internal view returns (address vestingAddress) {
+	function _getVesting(address _tokenOwner, uint256 _cliff, uint256 _duration, bool _governanceControl) internal view returns (address vestingAddress) {
 		if (_governanceControl) {
 			vestingAddress = vestingRegistryLogic.getTeamVesting(_tokenOwner, _cliff, _duration);
 		} else {
 			vestingAddress = vestingRegistryLogic.getVestingAddr(_tokenOwner, _cliff, _duration);
-		}
-	}
-
-	/**
-	 * @notice returns the addresses of Vesting contracts from all three previous versions of Vesting Registry
-	 */
-	function _getDeployedVestings(address _tokenOwner) internal {
-		vestingAddresses.push(vestingRegistry.getVesting(_tokenOwner));
-		vestingAddresses.push(vestingRegistry2.getVesting(_tokenOwner));
-		vestingAddresses.push(vestingRegistry3.getVesting(_tokenOwner));
-		for (uint256 i = 0; i < vestingAddresses.length; i++) {
-			if (vestingAddresses[i] != address(0)) {
-				VestingLogic vesting = VestingLogic(vestingAddresses[i]);
-				VestingMigratedData memory vestingMigratedData =
-					VestingMigratedData({
-						tokenOwner: _tokenOwner,
-						cliff: vesting.cliff(),
-						duration: vesting.duration(),
-						governanceControl: false,
-						vestingAddress: vestingAddresses[i]
-					});
-				vestingMigratedDataList.push(vestingMigratedData);
-			}
-		}
-	}
-
-	/**
-	 * @notice returns the addresses of TeamVesting contracts from all three previous versions of Vesting Registry
-	 */
-	function _getDeployedTeamVestings(address _tokenOwner) internal {
-		vestingAddresses.push(vestingRegistry.getTeamVesting(_tokenOwner));
-		vestingAddresses.push(vestingRegistry2.getTeamVesting(_tokenOwner));
-		vestingAddresses.push(vestingRegistry3.getTeamVesting(_tokenOwner));
-		for (uint256 i = 0; i < vestingAddresses.length; i++) {
-			if (vestingAddresses[i] != address(0)) {
-				VestingLogic vesting = VestingLogic(vestingAddresses[i]);
-				VestingMigratedData memory vestingMigratedData =
-					VestingMigratedData({
-						tokenOwner: _tokenOwner,
-						cliff: vesting.cliff(),
-						duration: vesting.duration(),
-						governanceControl: true,
-						vestingAddress: vestingAddresses[i]
-					});
-				vestingMigratedDataList.push(vestingMigratedData);
-			}
 		}
 	}
 }
